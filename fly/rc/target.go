@@ -3,12 +3,15 @@ package rc
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	conc "github.com/concourse/concourse"
@@ -42,7 +45,9 @@ func (e ErrVersionMismatch) Error() string {
 
 type Target interface {
 	Client() concourse.Client
+	IsSuperAdmin() bool
 	Team() concourse.Team
+	AsTeam(name string) concourse.Team
 	CACert() string
 	Validate() error
 	ValidateWithWarningOnly() error
@@ -394,6 +399,58 @@ func (t *target) getInfo() (atc.Info, error) {
 	var err error
 	t.info, err = t.client.GetInfo()
 	return t.info, err
+}
+
+func (t *target) IsSuperAdmin() bool {
+	payload, err := unmarshalToken(t.token.Value)
+	if nil != err {
+		return false
+	}
+	return isAdmin(payload)
+}
+
+func (t *target) AsTeam(name string) concourse.Team {
+	teams, err := t.Client().ListTeams()
+	if err != nil {
+		return nil
+	}
+	var teamExists bool
+	for _, team := range teams {
+		if name == team.Name {
+			teamExists = true
+			break
+		}
+	}
+	if !teamExists {
+		return nil
+	}
+	return t.client.Team(name)
+}
+
+func unmarshalToken(tokenValue string) (map[string]interface{}, error) {
+	tokenContents := strings.Split(tokenValue, ".")
+	if len(tokenContents) < 2 {
+		// this is really bad and makes it hard to write proper integration tests
+		return nil, nil
+	}
+
+	rawData, err := base64.StdEncoding.WithPadding(base64.NoPadding).DecodeString(tokenContents[1])
+	if err != nil {
+		return nil, err
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(rawData, &payload); err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
+func isAdmin(payload map[string]interface{}) bool {
+	if isAdmin, isAdminExistsInToken := payload["is_admin"]; isAdminExistsInToken && isAdmin.(bool) {
+		return true
+	}
+	return false
 }
 
 func defaultHttpClient(token *TargetToken, insecure bool, caCertPool *x509.CertPool) *http.Client {

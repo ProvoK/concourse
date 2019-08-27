@@ -1,6 +1,9 @@
 package integration_test
 
 import (
+	"encoding/base64"
+	"fmt"
+	"net/http"
 	"os/exec"
 
 	"github.com/concourse/concourse/atc"
@@ -162,6 +165,159 @@ var _ = Describe("Fly CLI", func() {
 
 				Eventually(sess).Should(gexec.Exit(1))
 				Eventually(sess.Err).Should(gbytes.Say("Unexpected Response"))
+			})
+		})
+		Context("when user is super admin", func() {
+			var loginATCServer *ghttp.Server
+			BeforeEach(func() {
+
+				flyCmd.Args = append(flyCmd.Args, "--team-name", "other-team")
+				encodedString := base64.StdEncoding.EncodeToString([]byte(`{
+					"teams": {
+						"main": ["owner"]
+					},
+					"user_id": "test",
+					"is_admin": true,
+					"user_name": "test"
+			}`))
+
+				teams := []atc.Team{
+					atc.Team{
+						ID:   1,
+						Name: "main",
+					},
+					atc.Team{
+						ID:   2,
+						Name: "other-team",
+					},
+				}
+				credentials := base64.StdEncoding.EncodeToString([]byte("fly:Zmx5"))
+				var teamHandler = func(teams []atc.Team) http.HandlerFunc {
+					return ghttp.CombineHandlers(
+						ghttp.VerifyRequest("GET", "/api/v1/teams"),
+						ghttp.VerifyHeaderKV("Authorization", "Bearer foo."+encodedString),
+						ghttp.RespondWithJSONEncoded(200, teams),
+					)
+				}
+				var adminTokenHandler = func() http.HandlerFunc {
+					return ghttp.CombineHandlers(
+						ghttp.VerifyRequest("POST", "/sky/token"),
+						ghttp.VerifyHeaderKV("Content-Type", "application/x-www-form-urlencoded"),
+						ghttp.VerifyHeaderKV("Authorization", fmt.Sprintf("Basic %s", credentials)),
+						ghttp.VerifyFormKV("grant_type", "password"),
+						ghttp.VerifyFormKV("username", "test"),
+						ghttp.VerifyFormKV("password", "test"),
+						ghttp.VerifyFormKV("scope", "openid profile email federated:id groups"),
+						ghttp.RespondWithJSONEncoded(200, map[string]string{
+							"token_type":   "Bearer",
+							"access_token": "foo." + encodedString,
+						}),
+					)
+				}
+				loginATCServer = ghttp.NewServer()
+				loginATCServer.AppendHandlers(
+					infoHandler(),
+					adminTokenHandler(),
+					teamHandler(teams),
+					infoHandler(),
+					teamHandler(teams),
+					ghttp.CombineHandlers(
+						ghttp.VerifyRequest("GET", "/api/v1/teams/other-team/containers"),
+						ghttp.RespondWithJSONEncoded(200, []atc.Container{
+							{
+								ID:           "handle-1",
+								WorkerName:   "worker-name-1",
+								PipelineName: "pipeline-name",
+								Type:         "check",
+								ResourceName: "git-repo",
+							},
+							{
+								ID:           "early-handle",
+								WorkerName:   "worker-name-1",
+								PipelineName: "pipeline-name",
+								JobName:      "job-name-1",
+								BuildName:    "3",
+								BuildID:      123,
+								Type:         "get",
+								StepName:     "git-repo",
+								Attempt:      "1.5",
+							},
+							{
+								ID:           "other-handle",
+								WorkerName:   "worker-name-2",
+								PipelineName: "pipeline-name",
+								JobName:      "job-name-2",
+								BuildName:    "2",
+								BuildID:      122,
+								Type:         "task",
+								StepName:     "unit-tests",
+							},
+							{
+								ID:         "post-handle",
+								WorkerName: "worker-name-3",
+								BuildID:    142,
+								Type:       "task",
+								StepName:   "one-off",
+							},
+						}),
+					),
+				)
+				flyLoginCmd := exec.Command(flyPath, "-t", "some-target", "login", "-c", loginATCServer.URL(), "-n", "main", "-u", "test", "-p", "test")
+				sess, err := gexec.Start(flyLoginCmd, GinkgoWriter, GinkgoWriter)
+				Expect(err).NotTo(HaveOccurred())
+
+				Eventually(sess).Should(gbytes.Say("logging in to team 'main'"))
+
+				<-sess.Exited
+				Expect(sess.ExitCode()).To(Equal(0))
+				Expect(sess.Out).To(gbytes.Say("target saved"))
+			})
+			AfterEach(func() {
+				loginATCServer.Close()
+			})
+			It("can list containers in 'other-team'", func() {
+				flyContainerCmd := exec.Command(flyPath, "-t", "some-target", "containers", "--team-name", "other-team", "--json")
+				sess, err := gexec.Start(flyContainerCmd, GinkgoWriter, GinkgoWriter)
+				Expect(err).NotTo(HaveOccurred())
+
+				Eventually(sess).Should(gexec.Exit(0))
+				Expect(sess.Out.Contents()).To(MatchJSON(`[
+              {
+                "id": "handle-1",
+                "worker_name": "worker-name-1",
+                "type": "check",
+                "pipeline_name": "pipeline-name",
+                "resource_name": "git-repo"
+              },
+              {
+                "id": "early-handle",
+                "worker_name": "worker-name-1",
+                "type": "get",
+                "step_name": "git-repo",
+                "attempt": "1.5",
+                "build_id": 123,
+                "pipeline_name": "pipeline-name",
+                "job_name": "job-name-1",
+                "build_name": "3"
+              },
+              {
+                "id": "other-handle",
+                "worker_name": "worker-name-2",
+                "type": "task",
+                "step_name": "unit-tests",
+                "build_id": 122,
+                "pipeline_name": "pipeline-name",
+                "job_name": "job-name-2",
+                "build_name": "2"
+              },
+              {
+                "id": "post-handle",
+                "worker_name": "worker-name-3",
+                "type": "task",
+                "step_name": "one-off",
+                "build_id": 142
+              }
+            ]`))
 			})
 		})
 	})

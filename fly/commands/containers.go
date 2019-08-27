@@ -1,6 +1,9 @@
 package commands
 
 import (
+	"errors"
+	"fmt"
+	"github.com/concourse/concourse/atc"
 	"os"
 	"sort"
 	"strconv"
@@ -12,7 +15,8 @@ import (
 )
 
 type ContainersCommand struct {
-	Json bool `long:"json" description:"Print command result as JSON"`
+	Json     bool   `long:"json" description:"Print command result as JSON"`
+	TeamName string `long:"team-name" short:"n" description:"show containers for the team"`
 }
 
 func (command *ContainersCommand) Execute([]string) error {
@@ -26,9 +30,18 @@ func (command *ContainersCommand) Execute([]string) error {
 		return err
 	}
 
-	containers, err := target.Team().ListContainers(map[string]string{})
-	if err != nil {
-		return err
+	var containers []atc.Container
+	if target.IsSuperAdmin() {
+		team := target.AsTeam(command.TeamName)
+		if nil == team {
+			return errors.New(fmt.Sprintf("team [%s] doesn't exist", command.TeamName))
+		}
+		containers, err = team.ListContainers(map[string]string{})
+	} else {
+		containers, err = target.Team().ListContainers(map[string]string{})
+		if err != nil {
+			return err
+		}
 	}
 
 	if command.Json {

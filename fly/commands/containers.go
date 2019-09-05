@@ -2,11 +2,12 @@ package commands
 
 import (
 	"errors"
-	"fmt"
-	"github.com/concourse/concourse/atc"
 	"os"
 	"sort"
 	"strconv"
+
+	"github.com/concourse/concourse/atc"
+	"github.com/concourse/concourse/go-concourse/concourse"
 
 	"github.com/concourse/concourse/fly/commands/internal/displayhelpers"
 	"github.com/concourse/concourse/fly/rc"
@@ -15,8 +16,9 @@ import (
 )
 
 type ContainersCommand struct {
-	Json     bool   `long:"json" description:"Print command result as JSON"`
-	TeamName string `long:"team-name" short:"n" description:"show containers for the team"`
+	Json     bool     `long:"json" description:"Print command result as JSON"`
+	Teams    []string `short:"n"  long:"team" description:"Show containers for these teams"`
+	AllTeams bool     `short:"a" long:"all-teams" description:"Show containers for the all teams that user has access to"`
 }
 
 func (command *ContainersCommand) Execute([]string) error {
@@ -30,18 +32,37 @@ func (command *ContainersCommand) Execute([]string) error {
 		return err
 	}
 
+	if len(command.Teams) > 0 && command.AllTeams {
+		return errors.New("Cannot specify both --all-teams and --team")
+	}
+
 	var containers []atc.Container
-	if target.IsSuperAdmin() {
-		team := target.AsTeam(command.TeamName)
-		if nil == team {
-			return errors.New(fmt.Sprintf("team [%s] doesn't exist", command.TeamName))
-		}
-		containers, err = team.ListContainers(map[string]string{})
-	} else {
-		containers, err = target.Team().ListContainers(map[string]string{})
+	var teams []concourse.Team
+
+	client := target.Client()
+	if command.AllTeams {
+		atcTeams, err := client.ListTeams()
 		if err != nil {
 			return err
 		}
+		for _, atcTeam := range atcTeams {
+			teams = append(teams, client.Team(atcTeam.Name))
+		}
+	} else if len(command.Teams) > 0 {
+		for _, teamName := range command.Teams {
+			teams = append(teams, client.Team(teamName))
+		}
+
+	} else {
+		teams = append(teams, target.Team())
+	}
+
+	for _, team := range teams {
+		teamContainers, err := team.ListContainers(map[string]string{})
+		if err != nil {
+			return err
+		}
+		containers = append(containers, teamContainers...)
 	}
 
 	if command.Json {

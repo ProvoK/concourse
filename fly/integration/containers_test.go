@@ -152,7 +152,7 @@ var _ = Describe("Fly CLI", func() {
 			})
 		})
 
-		Context("and the api returns an internal server error", func() {
+		Context("the api returns an internal server error", func() {
 			BeforeEach(func() {
 				atcServer.AppendHandlers(
 					ghttp.CombineHandlers(
@@ -170,12 +170,10 @@ var _ = Describe("Fly CLI", func() {
 				Eventually(sess.Err).Should(gbytes.Say("Unexpected Response"))
 			})
 		})
-		Context("when user is in other-team", func() {
+		Context("containers for teams", func() {
 			var loginATCServer *ghttp.Server
-			BeforeEach(func() {
 
-				flyCmd.Args = append(flyCmd.Args, "--team-name", "other-team")
-				encodedString := base64.RawStdEncoding.EncodeToString([]byte(`{
+			encodedString := base64.RawStdEncoding.EncodeToString([]byte(`{
 					"teams": {
 						"main": ["owner"],
 						"other-team": ["owner"]
@@ -185,51 +183,50 @@ var _ = Describe("Fly CLI", func() {
 					"user_name": "test"
 			}`))
 
-				teams := []atc.Team{
-					atc.Team{
-						ID:   1,
-						Name: "main",
-					},
-					atc.Team{
-						ID:   2,
-						Name: "other-team",
-					},
-				}
-				credentials := base64.StdEncoding.EncodeToString([]byte("fly:Zmx5"))
-				var teamHandler = func(teams []atc.Team) http.HandlerFunc {
-					return ghttp.CombineHandlers(
-						ghttp.VerifyRequest("GET", "/api/v1/teams"),
-						ghttp.VerifyHeaderKV("Authorization", "Bearer foo."+encodedString),
-						ghttp.RespondWithJSONEncoded(200, teams),
-					)
-				}
-				var adminTokenHandler = func() http.HandlerFunc {
-					return ghttp.CombineHandlers(
-						ghttp.VerifyRequest("POST", "/sky/token"),
-						ghttp.VerifyHeaderKV("Content-Type", "application/x-www-form-urlencoded"),
-						ghttp.VerifyHeaderKV("Authorization", fmt.Sprintf("Basic %s", credentials)),
-						ghttp.VerifyFormKV("grant_type", "password"),
-						ghttp.VerifyFormKV("username", "test"),
-						ghttp.VerifyFormKV("password", "test"),
-						ghttp.VerifyFormKV("scope", "openid profile email federated:id groups"),
-						ghttp.RespondWithJSONEncoded(200, map[string]string{
-							"token_type":   "Bearer",
-							"access_token": "foo." + encodedString,
-						}),
-					)
-				}
+			teams := []atc.Team{
+				atc.Team{
+					ID:   1,
+					Name: "main",
+				},
+				atc.Team{
+					ID:   2,
+					Name: "other-team",
+				},
+			}
+			credentials := base64.StdEncoding.EncodeToString([]byte("fly:Zmx5"))
+			var teamHandler = func(teams []atc.Team) http.HandlerFunc {
+				return ghttp.CombineHandlers(
+					ghttp.VerifyRequest("GET", "/api/v1/teams"),
+					ghttp.VerifyHeaderKV("Authorization", "Bearer foo."+encodedString),
+					ghttp.RespondWithJSONEncoded(200, teams),
+				)
+			}
+			var adminTokenHandler = func() http.HandlerFunc {
+				return ghttp.CombineHandlers(
+					ghttp.VerifyRequest("POST", "/sky/token"),
+					ghttp.VerifyHeaderKV("Content-Type", "application/x-www-form-urlencoded"),
+					ghttp.VerifyHeaderKV("Authorization", fmt.Sprintf("Basic %s", credentials)),
+					ghttp.VerifyFormKV("grant_type", "password"),
+					ghttp.VerifyFormKV("username", "test"),
+					ghttp.VerifyFormKV("password", "test"),
+					ghttp.VerifyFormKV("scope", "openid profile email federated:id groups"),
+					ghttp.RespondWithJSONEncoded(200, map[string]string{
+						"token_type":   "Bearer",
+						"access_token": "foo." + encodedString,
+					}),
+				)
+			}
+
+			BeforeEach(func() {
+				flyCmd.Args = append(flyCmd.Args, "--team-name", "other-team")
 				loginATCServer = ghttp.NewServer()
 				loginATCServer.AppendHandlers(
 					infoHandler(),
 					adminTokenHandler(),
 					teamHandler(teams),
 					infoHandler(),
-					teamHandler(teams),
-					ghttp.CombineHandlers(
-						ghttp.VerifyRequest("GET", "/api/v1/teams/other-team/containers"),
-						ghttp.RespondWithJSONEncoded(200, sampleContainers),
-					),
 				)
+
 				flyLoginCmd := exec.Command(flyPath, "-t", "some-target", "login", "-c", loginATCServer.URL(), "-n", "main", "-u", "test", "-p", "test")
 				sess, err := gexec.Start(flyLoginCmd, GinkgoWriter, GinkgoWriter)
 				Expect(err).NotTo(HaveOccurred())
@@ -240,17 +237,51 @@ var _ = Describe("Fly CLI", func() {
 				Expect(sess.ExitCode()).To(Equal(0))
 				Expect(sess.Out).To(gbytes.Say("target saved"))
 			})
+
 			AfterEach(func() {
 				loginATCServer.Close()
 			})
 
-			It("can list containers in 'other-team'", func() {
-				flyContainerCmd := exec.Command(flyPath, "-t", "some-target", "containers", "--team-name", "other-team", "--json")
-				sess, err := gexec.Start(flyContainerCmd, GinkgoWriter, GinkgoWriter)
-				Expect(err).NotTo(HaveOccurred())
+			Context("using --team parameter", func() {
+				BeforeEach(func() {
+					loginATCServer.AppendHandlers(
+						ghttp.CombineHandlers(
+							ghttp.VerifyRequest("GET", "/api/v1/teams/other-team/containers"),
+							ghttp.RespondWithJSONEncoded(200, sampleContainers),
+						),
+					)
+				})
+				It("can list containers in 'other-team'", func() {
+					flyContainerCmd := exec.Command(flyPath, "-t", "some-target", "containers", "--team", "other-team", "--json")
+					sess, err := gexec.Start(flyContainerCmd, GinkgoWriter, GinkgoWriter)
+					Expect(err).NotTo(HaveOccurred())
 
-				Eventually(sess).Should(gexec.Exit(0))
-				Expect(sess.Out.Contents()).To(MatchJSON(sampleContainerJsonString))
+					Eventually(sess).Should(gexec.Exit(0))
+					Expect(sess.Out.Contents()).To(MatchJSON(sampleContainerJsonString))
+				})
+			})
+			Context("using --all-teams parameter", func() {
+				BeforeEach(func() {
+					loginATCServer.AppendHandlers(
+						teamHandler(teams),
+						ghttp.CombineHandlers(
+							ghttp.VerifyRequest("GET", "/api/v1/teams/main/containers"),
+							ghttp.RespondWithJSONEncoded(200, sampleContainers),
+						),
+						ghttp.CombineHandlers(
+							ghttp.VerifyRequest("GET", "/api/v1/teams/other-team/containers"),
+							ghttp.RespondWithJSONEncoded(200, []atc.Container{}),
+						),
+					)
+				})
+				It("can list all the containers of all the teams", func() {
+					flyContainerCmd := exec.Command(flyPath, "-t", "some-target", "containers", "--all-teams", "--json")
+					sess, err := gexec.Start(flyContainerCmd, GinkgoWriter, GinkgoWriter)
+					Expect(err).NotTo(HaveOccurred())
+
+					Eventually(sess).Should(gexec.Exit(0))
+					Expect(sess.Out.Contents()).To(MatchJSON(sampleContainerJsonString))
+				})
 			})
 		})
 	})

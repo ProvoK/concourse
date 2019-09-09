@@ -1,9 +1,6 @@
 package integration_test
 
 import (
-	"encoding/base64"
-	"fmt"
-	"net/http"
 	"os/exec"
 
 	"github.com/concourse/concourse/atc"
@@ -173,16 +170,6 @@ var _ = Describe("Fly CLI", func() {
 		Context("containers for teams", func() {
 			var loginATCServer *ghttp.Server
 
-			encodedString := base64.RawStdEncoding.EncodeToString([]byte(`{
-					"teams": {
-						"main": ["owner"],
-						"other-team": ["owner"]
-					},
-					"user_id": "test",
-					"is_admin": true,
-					"user_name": "test"
-			}`))
-
 			teams := []atc.Team{
 				atc.Team{
 					ID:   1,
@@ -193,37 +180,14 @@ var _ = Describe("Fly CLI", func() {
 					Name: "other-team",
 				},
 			}
-			credentials := base64.StdEncoding.EncodeToString([]byte("fly:Zmx5"))
-			var teamHandler = func(teams []atc.Team) http.HandlerFunc {
-				return ghttp.CombineHandlers(
-					ghttp.VerifyRequest("GET", "/api/v1/teams"),
-					ghttp.VerifyHeaderKV("Authorization", "Bearer foo."+encodedString),
-					ghttp.RespondWithJSONEncoded(200, teams),
-				)
-			}
-			var adminTokenHandler = func() http.HandlerFunc {
-				return ghttp.CombineHandlers(
-					ghttp.VerifyRequest("POST", "/sky/token"),
-					ghttp.VerifyHeaderKV("Content-Type", "application/x-www-form-urlencoded"),
-					ghttp.VerifyHeaderKV("Authorization", fmt.Sprintf("Basic %s", credentials)),
-					ghttp.VerifyFormKV("grant_type", "password"),
-					ghttp.VerifyFormKV("username", "test"),
-					ghttp.VerifyFormKV("password", "test"),
-					ghttp.VerifyFormKV("scope", "openid profile email federated:id groups"),
-					ghttp.RespondWithJSONEncoded(200, map[string]string{
-						"token_type":   "Bearer",
-						"access_token": "foo." + encodedString,
-					}),
-				)
-			}
 
 			BeforeEach(func() {
 				flyCmd.Args = append(flyCmd.Args, "--team-name", "other-team")
 				loginATCServer = ghttp.NewServer()
 				loginATCServer.AppendHandlers(
 					infoHandler(),
-					adminTokenHandler(),
-					teamHandler(teams),
+					adminTokenHandler(encodedTokenString(true)),
+					teamHandler(teams, encodedTokenString(true)),
 					infoHandler(),
 				)
 
@@ -263,7 +227,7 @@ var _ = Describe("Fly CLI", func() {
 			Context("using --all-teams parameter", func() {
 				BeforeEach(func() {
 					loginATCServer.AppendHandlers(
-						teamHandler(teams),
+						teamHandler(teams, encodedTokenString(true)),
 						ghttp.CombineHandlers(
 							ghttp.VerifyRequest("GET", "/api/v1/teams/main/containers"),
 							ghttp.RespondWithJSONEncoded(200, sampleContainers),

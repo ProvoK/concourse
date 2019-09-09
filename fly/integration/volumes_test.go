@@ -385,7 +385,7 @@ var _ = Describe("Fly CLI", func() {
 					)
 				})
 				It("can list volumes in 'other-team'", func() {
-					flyVolumeCmd := exec.Command(flyPath, "-t", "some-target", "--team-scope", "other-team", "volumes", "--json")
+					flyVolumeCmd := exec.Command(flyPath, "-t", "some-target", "volumes", "--teams", "other-team", "--json")
 					sess, err := gexec.Start(flyVolumeCmd, GinkgoWriter, GinkgoWriter)
 					Expect(err).NotTo(HaveOccurred())
 
@@ -408,7 +408,7 @@ var _ = Describe("Fly CLI", func() {
 					)
 				})
 				It("can list all the volumes of all the teams", func() {
-					flyVolumeCmd := exec.Command(flyPath, "-t", "some-target", "--all-teams", "volumes", "--json")
+					flyVolumeCmd := exec.Command(flyPath, "-t", "some-target", "volumes", "--all-teams", "--json")
 					sess, err := gexec.Start(flyVolumeCmd, GinkgoWriter, GinkgoWriter)
 					Expect(err).NotTo(HaveOccurred())
 

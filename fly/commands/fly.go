@@ -24,8 +24,6 @@ type FlyCommand struct {
 	ActiveUsers ActiveUsersCommand `command:"active-users" alias:"au" description:"List the active users since a date or for the past 2 months"`
 	Userinfo    UserinfoCommand    `command:"userinfo" description:"User information"`
 
-	AllTeam     bool               `short:"a" long:"all-teams" description:"All available team scope for sub-commands"`
-	TeamScope   []string           `short:"n" long:"team-scope" description:"All or provided team scope"`
 	Teams       TeamsCommand       `command:"teams" alias:"t" description:"List the configured teams"`
 	GetTeam     GetTeamCommand     `command:"get-team"  alias:"gt" description:"Show team configuration"`
 	SetTeam     SetTeamCommand     `command:"set-team"  alias:"st" description:"Create or modify a team to have the given credentials"`

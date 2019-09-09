@@ -16,12 +16,12 @@ import (
 )
 
 type ContainersCommand struct {
-	Json     bool     `long:"json" description:"Print command result as JSON"`
-	Teams    []string `short:"n"  long:"team" description:"Show containers for these teams"`
-	AllTeams bool     `short:"a" long:"all-teams" description:"Show containers for the all teams that user has access to"`
+	Json bool `long:"json" description:"Print command result as JSON"`
 }
 
 func (command *ContainersCommand) Execute([]string) error {
+	teamScope := Fly.TeamScope
+	allTeams := Fly.AllTeam
 	target, err := rc.LoadTarget(Fly.Target, Fly.Verbose)
 	if err != nil {
 		return err
@@ -32,7 +32,7 @@ func (command *ContainersCommand) Execute([]string) error {
 		return err
 	}
 
-	if len(command.Teams) > 0 && command.AllTeams {
+	if len(teamScope) > 0 && allTeams {
 		return errors.New("Cannot specify both --all-teams and --team")
 	}
 
@@ -40,7 +40,7 @@ func (command *ContainersCommand) Execute([]string) error {
 	var teams []concourse.Team
 
 	client := target.Client()
-	if command.AllTeams {
+	if allTeams {
 		atcTeams, err := client.ListTeams()
 		if err != nil {
 			return err
@@ -48,8 +48,8 @@ func (command *ContainersCommand) Execute([]string) error {
 		for _, atcTeam := range atcTeams {
 			teams = append(teams, client.Team(atcTeam.Name))
 		}
-	} else if len(command.Teams) > 0 {
-		for _, teamName := range command.Teams {
+	} else if len(teamScope) > 0 {
+		for _, teamName := range teamScope {
 			teams = append(teams, client.Team(teamName))
 		}
 

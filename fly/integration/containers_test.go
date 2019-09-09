@@ -252,7 +252,7 @@ var _ = Describe("Fly CLI", func() {
 					)
 				})
 				It("can list containers in 'other-team'", func() {
-					flyContainerCmd := exec.Command(flyPath, "-t", "some-target", "containers", "--team", "other-team", "--json")
+					flyContainerCmd := exec.Command(flyPath, "-t", "some-target", "--team-scope", "other-team", "containers", "--json")
 					sess, err := gexec.Start(flyContainerCmd, GinkgoWriter, GinkgoWriter)
 					Expect(err).NotTo(HaveOccurred())
 
@@ -275,7 +275,7 @@ var _ = Describe("Fly CLI", func() {
 					)
 				})
 				It("can list all the containers of all the teams", func() {
-					flyContainerCmd := exec.Command(flyPath, "-t", "some-target", "containers", "--all-teams", "--json")
+					flyContainerCmd := exec.Command(flyPath, "-t", "some-target", "--all-teams", "containers", "--json")
 					sess, err := gexec.Start(flyContainerCmd, GinkgoWriter, GinkgoWriter)
 					Expect(err).NotTo(HaveOccurred())
 

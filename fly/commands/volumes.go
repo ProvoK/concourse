@@ -1,7 +1,9 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
+	"github.com/concourse/concourse/go-concourse/concourse"
 	"os"
 	"sort"
 	"strings"
@@ -21,6 +23,8 @@ type VolumesCommand struct {
 }
 
 func (command *VolumesCommand) Execute([]string) error {
+	teamScope := Fly.TeamScope
+	allTeams := Fly.AllTeam
 	target, err := rc.LoadTarget(Fly.Target, Fly.Verbose)
 	if err != nil {
 		return err
@@ -31,9 +35,37 @@ func (command *VolumesCommand) Execute([]string) error {
 		return err
 	}
 
-	volumes, err := target.Team().ListVolumes()
-	if err != nil {
-		return err
+	if len(teamScope) > 0 && allTeams {
+		return errors.New("Cannot specify both --all-teams and --team")
+	}
+
+	var volumes []atc.Volume
+	var teams []concourse.Team
+
+	client := target.Client()
+	if allTeams {
+		atcTeams, err := client.ListTeams()
+		if err != nil {
+			return err
+		}
+		for _, atcTeam := range atcTeams {
+			teams = append(teams, client.Team(atcTeam.Name))
+		}
+	} else if len(teamScope) > 0 {
+		for _, teamName := range teamScope {
+			teams = append(teams, client.Team(teamName))
+		}
+
+	} else {
+		teams = append(teams, target.Team())
+	}
+
+	for _, team := range teams {
+		teamVolumes, err := team.ListVolumes()
+		if err != nil {
+			return err
+		}
+		volumes = append(volumes, teamVolumes...)
 	}
 
 	if command.Json {
